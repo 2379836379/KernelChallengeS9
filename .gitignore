@@ -1,3 +1,34 @@
 *.xlsx
 *.docx
 
+cd ~/work/KernelChallengeS9
+cat > .gitignore << 'EOF'
+# ===== 编译产物 =====
+dist/
+build/
+*.egg-info/
+*.so
+*.o
+*.whl
+
+# ===== 性能分析数据（msprof 生成）=====
+PROF*
+prof*
+*.prof
+
+# ===== Python 缓存 =====
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ===== 编辑器/IDE =====
+.vscode/
+.idea/
+*.swp
+
+# ===== 系统文件 =====
+.DS_Store
+Thumbs.db
+EOF
