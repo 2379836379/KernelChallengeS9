@@ -15,41 +15,48 @@ using tensor_list = std::vector<at::Tensor>;
 using namespace at;
 
 
-at::Tensor my_op_impl_npu(const tensor_list inputs, int64_t dim, 
-                    const at::IntArrayRef& output_shape ) {
-    
-    auto round = 30 ;
-    at::Tensor result;
+at::Tensor my_op_impl_npu(const tensor_list& inputs, int64_t dim,
+                          const at::IntArrayRef& output_shape) {
+    TORCH_CHECK(!inputs.empty(), "custom_op expects at least one input tensor");
 
-    auto a = at::empty(
-        {4096, 4096},
-        at::TensorOptions()
-            .device(at::kPrivateUse1)  // 昇腾NPU固定设备标识 kPrivateUse1
-            .dtype(at::kFloat)         // float32
-    );
-    auto b = at::empty(
-        {4096, 4096},
-        at::TensorOptions()
-            .device(at::kPrivateUse1)  // 昇腾NPU固定设备标识 kPrivateUse1
-            .dtype(at::kFloat)         // float32
-    );
-    auto c = at::empty(
-        {4096, 4096},
-        at::TensorOptions()
-            .device(at::kPrivateUse1)  // 昇腾NPU固定设备标识 kPrivateUse1
-            .dtype(at::kFloat)         // float32
-    );
+    const auto& first = inputs.front();
+    TORCH_CHECK(first.defined(), "input tensor must be defined");
+    const auto ndim = first.dim();
+    TORCH_CHECK(ndim > 0, "custom_op does not support scalar tensors");
+    TORCH_CHECK(output_shape.size() == static_cast<size_t>(ndim),
+                "output_shape must have the same rank as the input tensors");
 
-    for (size_t i = 0; i < round; i++)
-    {
-        at::TensorList inputs_x = at::TensorList(inputs);
-        result = at::empty(
-            output_shape, 
-            inputs[0].options()  // 复用input的dtype/device（NPU）
-        );
-        EXEC_NPU_CMD(aclnnMul, a, b, c);
-        EXEC_NPU_CMD(aclnnConcat, inputs_x, dim, result);
+    if (dim < 0) {
+        dim += ndim;
     }
+    TORCH_CHECK(dim >= 0 && dim < ndim, "concat dimension is out of range");
+
+    auto expected_shape = first.sizes().vec();
+    int64_t concat_size = 0;
+    for (const auto& input : inputs) {
+        TORCH_CHECK(input.defined(), "input tensor must be defined");
+        TORCH_CHECK(input.dim() == ndim,
+                    "all input tensors must have the same rank");
+        TORCH_CHECK(input.device() == first.device(),
+                    "all input tensors must be on the same device");
+        TORCH_CHECK(input.scalar_type() == first.scalar_type(),
+                    "all input tensors must have the same dtype");
+        for (int64_t axis = 0; axis < ndim; ++axis) {
+            if (axis != dim) {
+                TORCH_CHECK(input.size(axis) == first.size(axis),
+                            "input sizes must match except on concat dimension");
+            }
+        }
+        concat_size += input.size(dim);
+    }
+    expected_shape[dim] = concat_size;
+    for (int64_t axis = 0; axis < ndim; ++axis) {
+        TORCH_CHECK(output_shape[axis] == expected_shape[axis],
+                    "output_shape does not match the inputs");
+    }
+
+    auto result = at::empty(output_shape, first.options());
+    EXEC_NPU_CMD(aclnnConcat, at::TensorList(inputs), dim, result);
     return result;
 }
 
@@ -69,4 +76,3 @@ TORCH_LIBRARY_IMPL(myops, PrivateUse1, m) {
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 		m.def("custom_op", &my_op_impl_npu, "torch.cat");
 }
-

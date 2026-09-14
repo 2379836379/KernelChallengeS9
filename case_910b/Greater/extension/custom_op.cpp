@@ -16,39 +16,16 @@ using namespace at;
 
 
 at::Tensor my_op_impl_npu(const at::Tensor& x1, const at::Tensor& x2) {
-    auto round = 30;
-    at::Tensor result;
-    auto a = at::empty(
-        {4096, 4096},
-        at::TensorOptions()
-            .device(at::kPrivateUse1)  // 昇腾NPU固定设备标识 kPrivateUse1
-            .dtype(at::kFloat)         // float32
-    );
-    auto b = at::empty(
-        {4096, 4096},
-        at::TensorOptions()
-            .device(at::kPrivateUse1)  // 昇腾NPU固定设备标识 kPrivateUse1
-            .dtype(at::kFloat)         // float32
-    );
-    auto c = at::empty(
-        {4096, 4096},
-        at::TensorOptions()
-            .device(at::kPrivateUse1)  // 昇腾NPU固定设备标识 kPrivateUse1
-            .dtype(at::kFloat)         // float32
-    );
-    for (size_t i = 0; i < round; i++)
-    {
-        // 获取广播后的输出形状
-        auto output_size = at::infer_size(x1.sizes(), x2.sizes());
+    TORCH_CHECK(x1.defined() && x2.defined(),
+                "custom_op expects two defined input tensors");
+    TORCH_CHECK(x1.device() == x2.device(),
+                "input tensors must be on the same device");
 
-        result = at::empty(
-            output_size,
-            x1.options().dtype(at::kBool)
-        );
-        EXEC_NPU_CMD(aclnnMul, a, b, c);
-        EXEC_NPU_CMD(aclnnGreater, x1, x2, result);
-    }
-
+    // aclnnGreater follows PyTorch broadcasting semantics. infer_size also
+    // validates incompatible input shapes before the output is allocated.
+    const auto output_size = at::infer_size(x1.sizes(), x2.sizes());
+    auto result = at::empty(output_size, x1.options().dtype(at::kBool));
+    EXEC_NPU_CMD(aclnnGreater, x1, x2, result);
     return result;
 }
 
