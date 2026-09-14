@@ -1,39 +1,17 @@
 #!/bin/bash
-set -eu
 
-op_name=${1:?"usage: $0 <operator-name>"}
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-op_dir="$script_dir/../${op_name}"
-zip_root="$script_dir/${op_name}_zip"
-archive="$script_dir/${op_name}.zip"
+op_name=$1
+# 算子工程目录,自行设定路径
+op_dir="../${op_name}"
+echo $op_dirs
+rm -rf ${op_name}_zip ${op_name}.zip
+mkdir ${op_name}_zip
 
-test -d "$op_dir/op_host"
-test -d "$op_dir/op_kernel"
-test -n "$(find "$op_dir/build_out" -maxdepth 1 -type f -name 'custom_*.run' -print -quit 2>/dev/null)"
+# 复制op_host/ op_kernel/ build_out/custom_*.run文件到指定目录
+cp -r ${op_dir}/op_host ${op_name}_zip
+cp -r ${op_dir}/op_kernel ${op_name}_zip
+cp -r ${op_dir}/build_out/custom_*.run ${op_name}_zip
 
-rm -rf "$zip_root" "$archive"
-mkdir -p "$zip_root"
-cp -R "$op_dir/op_host" "$zip_root/"
-cp -R "$op_dir/op_kernel" "$zip_root/"
-find "$op_dir/build_out" -maxdepth 1 -type f -name 'custom_*.run' -exec cp {} "$zip_root/" \;
+# 打包文件
+zip -r ${op_name}.zip ${op_name}_zip
 
-if command -v zip >/dev/null 2>&1; then
-    (cd "$script_dir" && zip -qr "$archive" "${op_name}_zip")
-else
-    python3 - "$script_dir" "$op_name" <<'PY'
-import pathlib
-import sys
-import zipfile
-
-root = pathlib.Path(sys.argv[1])
-name = sys.argv[2]
-source = root / f"{name}_zip"
-archive = root / f"{name}.zip"
-with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as output:
-    for path in source.rglob("*"):
-        if path.is_file():
-            output.write(path, path.relative_to(root))
-PY
-fi
-
-printf 'Created %s\n' "$archive"
