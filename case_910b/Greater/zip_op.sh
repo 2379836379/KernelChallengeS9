@@ -2,7 +2,7 @@
 
 op_name=$1
 # 算子工程目录,自行设定路径
-op_dir="../op/${op_name}"
+op_dir="../${op_name}"
 echo $op_dirs
 rm -rf ${op_name}_zip ${op_name}.zip
 mkdir ${op_name}_zip
