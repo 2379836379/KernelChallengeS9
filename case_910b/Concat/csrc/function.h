@@ -1,17 +1,9 @@
-/**
- * @file function.h
- *
- * Copyright (C) 2024-2025. Huawei Technologies Co., Ltd. All rights reserved.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- */
-#ifndef FUNCTION_H
-#define FUNCTION_H
+#ifndef CONCAT_FUNCTION_H
+#define CONCAT_FUNCTION_H
 
 #include <ATen/ATen.h>
+#include <vector>
 
-at::Tensor add_custom_autograd(const at::Tensor& self, const at::Tensor& other);
+at::Tensor concat_custom(const std::vector<at::Tensor>& inputs, int64_t dim);
 
-#endif //  FUNCTION_H
+#endif  // CONCAT_FUNCTION_H

@@ -1,7 +1,7 @@
 import torch
 import torch_npu
 from torch_npu.testing.testcase import TestCase, run_tests
-import custom_ops_lib
+import custom_ops
 torch.npu.config.allow_internal_format = False
 import numpy as np
 import copy
@@ -87,9 +87,9 @@ class TestCustomOP(TestCase):
             input_other = torch.from_numpy(case_data[caseName]["x"])
         insert_special_values(input_x)
         insert_special_values(input_other)
-        output = torch.gt(input_x, input_other)
-        # 修改输入
-        output_npu = custom_ops_lib.custom_op(input_x.npu(), input_other.npu())
+        inputs = [input_x, input_other]
+        output = torch.cat(inputs, dim=0)
+        output_npu = custom_ops.concat([tensor.npu() for tensor in inputs], 0)
         if output_npu is None:
             print(f"{caseName} execution timed out!")
         else:
