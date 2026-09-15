@@ -19,7 +19,6 @@ if [ "x$1" == "x1" ]; then
     fi
 fi
 
-
    rm -rf PROF*
    timeout 180  msprof --application="python3 test_op.py $1"
 

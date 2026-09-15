@@ -4,16 +4,46 @@ from torch_npu.testing.testcase import TestCase, run_tests
 import custom_ops_lib
 torch.npu.config.allow_internal_format = False
 import numpy as np
+import copy
 import sys  
-import random
 
 case_data = {
     'case1': {
-        'input': np.random.uniform(-500, 500, [128,256]).astype(np.float16),
-        'dim': -1,
-        'max_step': 64
+        'other':np.random.uniform(-1000, 1000, [32,64]).astype(np.float16),
+        'x':np.random.uniform(-1000, 1000, [32,64]).astype(np.float16)
     }
 }
+
+def insert_special_values(
+    x: torch.Tensor,
+    prob_inf: float = 0.05,
+    prob_ninf: float = 0.05,
+    prob_nan: float = 0.05
+) -> None:
+    """
+    原地修改tensor，随机插入 inf / -inf / nan
+    自动识别dtype：浮点型正常填充；整型直接跳过不做任何修改
+    :param x: 待原地修改的tensor
+    :param prob_inf: 单个元素赋值inf概率
+    :param prob_ninf: 单个元素赋值-inf概率
+    :param prob_nan: 单个元素赋值nan概率
+    """
+    # 整型无法存储inf/nan，直接返回
+    if not torch.is_floating_point(x):
+        return 
+
+    dtype = x.dtype
+    r = torch.rand_like(x)
+
+    # 构造各特殊值掩码
+    mask_inf = r < prob_inf
+    mask_ninf = (r >= prob_inf) & (r < prob_inf + prob_ninf)
+    mask_nan = (r >= prob_inf + prob_ninf) & (r < prob_inf + prob_ninf + prob_nan)
+
+    # 原地填充，自动适配当前tensor dtype
+    x.masked_fill_(mask_inf, torch.tensor(float("inf"), dtype=dtype))
+    x.masked_fill_(mask_ninf, torch.tensor(float("-inf"), dtype=dtype))
+    x.masked_fill_(mask_nan, torch.tensor(float("nan"), dtype=dtype))
 
 def verify_result(real_result, golden):
     # 根据数据类型设置误差阈值（与原逻辑一致）
@@ -43,76 +73,27 @@ def verify_result(real_result, golden):
     print("test pass")
     return True
 
-def generate_random_split_sizes(total_len: int, max_step: int) -> list[int]:
-    """
-    随机生成分割长度列表 split_sizes
-    约束：
-        1. sum(split_sizes) == total_len
-        2. 每个元素 ∈ [0, max_step]
-        3. 自动生成任意份数分片，随机切分
-    """
-    if total_len < 0:
-        raise ValueError("total_len 不能为负数")
-    if max_step < 0:
-        raise ValueError("max_step 不能为负数")
-    random.seed(111)
-    remain = total_len
-    split_sizes = []
-
-    while True:
-        # 本轮可取上限：剩余长度和max_step取更小值
-        upper = min(remain, max_step)
-        pick = random.randint(0, upper)
-        split_sizes.append(pick)
-        remain -= pick
-
-        if remain == 0:
-            break
-
-    return split_sizes
-    
-def unpack_tensor_by_dim(
-    tensor: torch.Tensor,
-    split_sizes: list[int],
-    dim: int = 0
-) -> list[torch.Tensor]:
-    """
-    在指定维度dim拆分张量为多份子张量，支持分片长度=0
-    :param tensor: 输入原始张量
-    :param split_sizes: 各分片在dim上的长度列表，允许元素=0
-                        sum(split_sizes) 必须等于 tensor.size(dim)
-    :param dim: 要拆分的维度，支持负数索引
-    :return: 子张量list，顺序和split_sizes一一对应，size=0的张量正常保留
-    """
-    dim = dim % tensor.dim()  # 负维度转正
-    # torch.split原生支持size=0
-    chunks = torch.split(tensor, split_sizes, dim=dim)
-    return list(chunks)
     
 class TestCustomOP(TestCase):
     def test_custom_op_case(self,num):
         print(num)
         caseName='case'+str(num) 
 
-        input_x = torch.from_numpy(case_data[caseName]["input"])
-        print(input_x.shape)
-        dim = case_data[caseName]["dim"]
-        step = case_data[caseName]["max_step"]
-        total_len = input_x.shape[dim]
-
-        split_sizes = generate_random_split_sizes(total_len, step)
-        inputs = list(torch.split(input_x, split_sizes, dim=dim))
-        inputs_npu = [ele.npu() for ele in inputs]
-        print(split_sizes)
-        print([ele.shape for ele in inputs])
+        if int(num) == 3:
+            input_x = case_data[caseName]["other"]
+            input_other = case_data[caseName]["x"]
+        else:
+            input_x = torch.from_numpy(case_data[caseName]["other"])
+            input_other = torch.from_numpy(case_data[caseName]["x"])
+        insert_special_values(input_x)
+        insert_special_values(input_other)
+        output = torch.gt(input_x, input_other)
         # 修改输入
-        output_npu = custom_ops_lib.custom_op(inputs_npu, dim, input_x.shape)
+        output_npu = custom_ops_lib.custom_op(input_x.npu(), input_other.npu())
         if output_npu is None:
             print(f"{caseName} execution timed out!")
         else:
-            output_cpu = output_npu.cpu()
-
-            if verify_result(output_cpu, input_x):
+            if verify_result(output_npu.cpu(), output):
                 print(f"{caseName} verify result pass!")
             else:
                 print(f"{caseName} verify result failed!")
